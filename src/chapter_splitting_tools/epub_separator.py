@@ -250,7 +250,6 @@ class EPUBSeparator:
                         out_f.write(extracted_text)
                     self.log_function(f"[DEBUG] Wrote {chapter_filename} ({byte_size} bytes)")
 
-
     def separate(self, epub_path, output_dir, max_bytes=None):
         """
         Main method to extract images and text from EPUB.
@@ -262,12 +261,25 @@ class EPUBSeparator:
         """
         if max_bytes is None:
             max_bytes = self.max_byte_limit
-            
+
         if not os.path.exists(epub_path):
             self.log_function(f"[ERROR] File not found: {epub_path}")
             return
 
+        epub_name = os.path.splitext(os.path.basename(epub_path))[0]
+        output_parent = os.path.dirname(output_dir)
+        alt_folder_plain = os.path.join(output_parent, epub_name)
+        alt_folder_processed = os.path.join(output_parent, f"processed_{epub_name}")
+
+        # IMPORTANT: Check for conflicting folders *before* creating anything
+        if os.path.exists(alt_folder_plain) or os.path.exists(alt_folder_processed):
+            reason = f"Folder already exists for '{epub_name}'"
+            self.log_function(f"[SKIP] {reason}")
+            raise RuntimeError(reason)
+
+        # Now safe to create output folder
         os.makedirs(output_dir, exist_ok=True)
+
 
         opf_path = self.get_opf_path(epub_path)
         self.log_function("[DEBUG] Type of opf_path:", type(opf_path), "->", opf_path)
@@ -295,6 +307,75 @@ class EPUBSeparator:
 
         self.extract_chapters(epub_path, opf_path, manifest_items, spine_ids, image_map, output_dir, max_bytes)
 
+    def bulk_split_with_dialog(self, base_output_dir="input"):
+        """
+        Prompts user to select multiple EPUBs, then processes them using `separate()`.
+
+        Args:
+            base_output_dir (str): Root folder where processed output goes (default: "input")
+        """
+        from tkinter import Tk, filedialog
+        import os
+
+        Tk().withdraw()
+        epub_paths = filedialog.askopenfilenames(
+            title="Select EPUB files to split",
+            filetypes=[("EPUB files", "*.epub")]
+        )
+
+        if not epub_paths:
+            self.log_function("[CANCELLED] No EPUBs selected.")
+            return
+
+        os.makedirs(base_output_dir, exist_ok=True)
+        results = {}
+        skipped_files = []
+        failed_files = []
+        successful_files = []
+
+        for epub_path in epub_paths:
+            epub_name = os.path.splitext(os.path.basename(epub_path))[0]
+            output_dir = os.path.join(base_output_dir, epub_name)
+            processed_dir = os.path.join(base_output_dir, f"processed_{epub_name}")
+
+            if os.path.exists(output_dir) or os.path.exists(processed_dir):
+                reason = f"Folder already exists for '{epub_name}'"
+                self.log_function(f"[SKIP] {reason}")
+                skipped_files.append({"file": epub_name, "reason": reason})
+                results[epub_name] = {"success": False, "error": reason}
+                continue
+
+            try:
+                self.log_function(f"[START] Processing: {epub_name}")
+                self.separate(epub_path, output_dir)
+                self.log_function(f"[OK] {epub_name} split successfully.")
+                successful_files.append(epub_name)
+                results[epub_name] = {"success": True}
+            except Exception as e:
+                self.log_function(f"[ERROR] Failed to split '{epub_name}': {e}")
+                failed_files.append({"file": epub_name, "reason": str(e)})
+                results[epub_name] = {"success": False, "error": str(e)}
+
+        # Final summary
+        self.log_function("\n" + "="*50)
+        self.log_function("BULK EPUB SPLIT SUMMARY")
+        self.log_function("="*50)
+        self.log_function(f"Total EPUBs: {len(epub_paths)}")
+        self.log_function(f"Successfully processed: {len(successful_files)}")
+        self.log_function(f"Skipped (existing directories): {len(skipped_files)}")
+        self.log_function(f"Failed (errors): {len(failed_files)}")
+        
+        if skipped_files:
+            self.log_function("\nSkipped files:")
+            for item in skipped_files:
+                self.log_function(f"- {item['file']}: {item['reason']}")
+        
+        if failed_files:
+            self.log_function("\nFailed files:")
+            for item in failed_files:
+                self.log_function(f"- {item['file']}: {item['reason']}")
+
+
 def main():
     """
     Command-line entry point for EPUB separation.
@@ -310,3 +391,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

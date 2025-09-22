@@ -20,21 +20,36 @@ def read_config():
                     config[key.strip()] = value.strip()
     return config
 
-# Load config values
-config_values = read_config()
-PROJECT_ID = config_values.get("PROJECT_ID", "your-project-id")
-LOCATION   = config_values.get("LOCATION", "us-central1")
-LOGIN_KEY  = config_values.get("LOGIN_KEY", "")
+def initialize_vertexai():
+    """Initialize or reinitialize VertexAI with current configuration."""
+    global PROJECT_ID, LOCATION, LOGIN_KEY
 
-# Load and apply credentials from JSON
-if not os.path.exists(service_account_file):
-    raise RuntimeError(f"[CONFIG] Missing service_account.json in {this_dir}")
+    # Load config values
+    config_values = read_config()
+    PROJECT_ID = config_values.get("PROJECT_ID", "your-project-id")
+    LOCATION   = config_values.get("LOCATION", "us-central1")
+    LOGIN_KEY  = config_values.get("LOGIN_KEY", "")
 
+    # Load and apply credentials from JSON
+    if not os.path.exists(service_account_file):
+        raise RuntimeError(f"[CONFIG] Missing service_account.json in {this_dir}")
+
+    try:
+        credentials = service_account.Credentials.from_service_account_file(service_account_file)
+        vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+        print(f"[CONFIG] VertexAI initialized - Project: {PROJECT_ID}, Location: {LOCATION}")
+    except Exception as e:
+        raise RuntimeError(f"[CONFIG] Failed to initialize VertexAI with service account: {e}")
+
+# Initialize on first import
 try:
-    credentials = service_account.Credentials.from_service_account_file(service_account_file)
-    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+    initialize_vertexai()
 except Exception as e:
-    raise RuntimeError(f"[CONFIG] Failed to initialize VertexAI with service account: {e}")
+    print(f"[CONFIG] Warning: Initial VertexAI initialization failed: {e}")
+    # Set default values if initialization fails
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    LOGIN_KEY = ""
 
 # Global safety settings
 SAFETY_SETTING = {

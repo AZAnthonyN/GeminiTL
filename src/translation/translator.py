@@ -98,10 +98,11 @@ class Translator:
             return ""
         
     def generate_with_instructions(self, prompt, instructions, instructions_label, log_message,
-                                    max_retries=2, retry_delay=90):
+                                    max_retries=2, retry_delay=90, cancel_flag=None):
         """
         Attempts translation using the provided instructions (primary or secondary).
         Retries on certain errors. If blocked for prohibited content, raises RuntimeError.
+        Supports cancellation via cancel_flag.
         """
         log_message(f"[{instructions_label}] Attempting generation...")
 
@@ -111,10 +112,28 @@ class Translator:
 
         attempt = 0
         while attempt < max_retries:
+            # Check for cancellation before each attempt
+            if cancel_flag and cancel_flag():
+                log_message(f"[{instructions_label}] Generation cancelled by user.")
+                raise RuntimeError("GENERATION_CANCELLED")
+
             try:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(tl_model.generate_content, full_prompt)
-                    response = future.result(timeout=180)
+                from proofing.utils import call_with_cancellation
+
+                success, response = call_with_cancellation(
+                    tl_model.generate_content,
+                    args=(full_prompt,),
+                    timeout=180,
+                    cancel_flag=cancel_flag
+                )
+
+                if not success:
+                    if "cancelled" in str(response).lower():
+                        log_message(f"[{instructions_label}] Generation cancelled: {response}")
+                        raise RuntimeError("GENERATION_CANCELLED")
+                    else:
+                        log_message(f"[{instructions_label}] Timeout or error during generation: {response}")
+                        raise RuntimeError("GENERATION_FAILED")
 
                 log_message(f"[{instructions_label}] Generation succeeded on attempt {attempt + 1}.")
                 return response.text
@@ -140,16 +159,21 @@ class Translator:
             attempt += 1
             if attempt < max_retries:
                 log_message(f"[{instructions_label}] Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
+                from proofing.utils import cancellable_sleep
+                if not cancellable_sleep(retry_delay, cancel_flag):
+                    log_message(f"[{instructions_label}] Retry cancelled during delay.")
+                    raise RuntimeError("GENERATION_CANCELLED")
             else:
                 raise
 
-    def translate(self, text, log_message=None):
+    def translate(self, text, log_message=None, cancel_flag=None):
         """
         Translate the given text using the Gemini API.
-        
+
         Args:
             text: The text to translate
+            log_message: Function to log messages
+            cancel_flag: Function that returns True if translation should be cancelled
             log_message: Optional callback function for logging
             
         Returns:
@@ -208,14 +232,22 @@ class Translator:
                 instructions_label="PRIMARY",
                 log_message=log_message,
                 max_retries=3,
-                retry_delay=60
+                retry_delay=60,
+                cancel_flag=cancel_flag
             )
 
         except RuntimeError as e:
+            # Handle cancellation
+            if "GENERATION_CANCELLED" in str(e):
+                log_message("[PRIMARY] Translation cancelled by user.")
+                return None
             # If blocked by content, switch to secondary instructions
-            if "PROHIBITED_CONTENT_BLOCK" in str(e):
+            elif "PROHIBITED_CONTENT_BLOCK" in str(e):
                 log_message("[PRIMARY] Blocked. Attempting SECONDARY in 5s.")
-                time.sleep(5)
+                from proofing.utils import cancellable_sleep
+                if not cancellable_sleep(5, cancel_flag):
+                    log_message("[PRIMARY] Cancelled during blocked content delay.")
+                    return None
                 try:
                     translated = self.generate_with_instructions(
                         prompt=text_with_placeholders,
@@ -223,12 +255,18 @@ class Translator:
                         instructions_label="SECONDARY",
                         log_message=log_message,
                         max_retries=2,
-                        retry_delay=5
+                        retry_delay=5,
+                        cancel_flag=cancel_flag
                     )
                 except RuntimeError as e2:
-                    if "PROHIBITED_CONTENT_BLOCK" in str(e2):
+                    if "GENERATION_CANCELLED" in str(e2):
+                        log_message("[SECONDARY] Translation cancelled by user.")
+                        return None
+                    elif "PROHIBITED_CONTENT_BLOCK" in str(e2):
                         log_message("[SECONDARY] Also blocked. Skipping file in 5s.")
-                        time.sleep(5)
+                        from proofing.utils import cancellable_sleep
+                        if not cancellable_sleep(5, cancel_flag):
+                            log_message("[SECONDARY] Cancelled during blocked content delay.")
                         return None
                     else:
                         log_message(f"[SECONDARY] Error: {e2}. Skipping.")

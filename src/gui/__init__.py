@@ -4,12 +4,13 @@ GUI entrypoint for the Gemini novel translation tool.
 """
 
 from .app import TranslationApp
-import tkinter as tk
+import wx
 
 def main():
-    root = tk.Tk()
-    app = TranslationApp(root)
-    root.mainloop()
+    app = wx.App()
+    frame = TranslationApp()
+    frame.Show()
+    app.MainLoop()
 
 if __name__ == "__main__":
     main()

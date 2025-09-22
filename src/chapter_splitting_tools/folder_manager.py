@@ -7,8 +7,7 @@ Added 2025‑05‑09:
     • When clearing Input, removes input/images.
 """
 
-import tkinter as tk
-from tkinter import messagebox
+import wx
 import os
 from typing import Optional, Callable
 from pathlib import Path
@@ -80,45 +79,40 @@ class FolderManager:
     # ---------- UI ---------- #
 
     def show_clear_dialog(self) -> None:
-        def on_selection(selection: str) -> None:
-            if selection == "Cancel":
-                root.destroy()
-                return
+        # Create a simple choice dialog
+        choices = ["Input", "Output", "Both"]
 
-            plural = "s" if selection == "Both" else ""
-            if not messagebox.askyesno(
-                "Confirm",
-                f"Are you sure you want to clear the {selection} folder{plural}?"
-            ):
-                root.destroy()
-                return
+        # Create a temporary app if one doesn't exist
+        app = wx.App.Get()
+        if not app:
+            app = wx.App()
 
-            if selection == "Input":
-                self.clear_input()
-            elif selection == "Output":
-                self.clear_output()
-            elif selection == "Both":
-                self.clear_input()
-                self.clear_output()
+        with wx.SingleChoiceDialog(None, "Select a folder to clear:", "Clear Folders", choices) as dialog:
+            if dialog.ShowModal() == wx.ID_OK:
+                selection = dialog.GetStringSelection()
 
-            messagebox.showinfo("Success", f"{selection} folder{plural} cleared.")
-            root.destroy()
+                plural = "s" if selection == "Both" else ""
 
-        root = tk.Tk()
-        root.title("Clear Folders")
-        root.geometry("300x200")
+                # Confirm the action
+                if wx.MessageBox(f"Are you sure you want to clear the {selection} folder{plural}?",
+                               "Confirm", wx.YES_NO | wx.ICON_QUESTION) != wx.YES:
+                    return
 
-        tk.Label(root, text="Select a folder to clear:", font=("Arial", 14)).pack(pady=10)
-        tk.Button(root, text="Input",  command=lambda: on_selection("Input")).pack(fill="x", pady=5, padx=10)
-        tk.Button(root, text="Output", command=lambda: on_selection("Output")).pack(fill="x", pady=5, padx=10)
-        tk.Button(root, text="Both",   command=lambda: on_selection("Both")).pack(fill="x", pady=5, padx=10)
-        tk.Button(root, text="Cancel", command=lambda: on_selection("Cancel")).pack(fill="x", pady=5, padx=10)
+                if selection == "Input":
+                    self.clear_input()
+                elif selection == "Output":
+                    self.clear_output()
+                elif selection == "Both":
+                    self.clear_input()
+                    self.clear_output()
 
-        root.mainloop()
+                wx.MessageBox(f"{selection} folder{plural} cleared.", "Success", wx.OK | wx.ICON_INFORMATION)
 
 
 def main() -> None:
+    app = wx.App()
     FolderManager().show_clear_dialog()
+    app.MainLoop()
 
 
 if __name__ == "__main__":

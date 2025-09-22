@@ -1,0 +1,89 @@
+# Personal Files & Data
+/input/*
+/output/*
+/compiled_epubs/*
+/translation/glossary/*
+
+# Sensitive Configuration Files
+src/config/service_account.json
+src/config/old_service_account.json
+src/config/config.txt
+src/config/providers_config.json
+
+# Service Account Keys (any location)
+*service_account*.json
+*-*.json
+!*.json.template
+
+# API Keys & Credentials
+*.key
+*.pem
+*.p12
+*.pfx
+config.txt
+providers_config.json
+
+# Environment Files
+.env
+.env.local
+.env.production
+.env.staging
+
+# Development & History
+/.history
+/outdated_unused_items
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs & Temporary Files
+*.log
+logs/
+temp_*/
+*.tmp
+*.temp
+
+# Personal Content
+peak*.txt
+error.txt
+non_english_detected.txt
+/.history
+/outdated_unused_items
+/translation/glossary/*
+/src/config/service_account.json
+/src/config/old_service_account.json

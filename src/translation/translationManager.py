@@ -9,11 +9,32 @@ from glossary.glossary import Glossary
 from proofing.proofing import Proofreader
 from translation.image_ocr import ImageOCR
 from glossary.glossary_splitter import split_glossary
+from proofing.utils import is_image_only_chapter
 
-def setup_glossary(glossary_file, log_message):
+# Try to import the new multi-provider translator
+try:
+    from translation.multi_provider_translator import MultiProviderTranslator
+    MULTI_PROVIDER_AVAILABLE = True
+except ImportError:
+    MULTI_PROVIDER_AVAILABLE = False
+
+def create_translator(glossary_file, source_lang='Japanese', preferred_provider=None):
+    """Create the appropriate translator instance."""
+    if MULTI_PROVIDER_AVAILABLE:
+        return MultiProviderTranslator(glossary_file, source_lang, preferred_provider)
+    else:
+        return Translator(glossary_file, source_lang)
+
+def setup_glossary(glossary_file, input_folder, log_message):
     glossary = Glossary()
+
     if glossary_file:
         glossary.set_current_glossary_file(glossary_file)
+    else:
+        glossary.create_named_glossary_if_none(input_folder, log_message)
+
+    log_message(f"[GLOSSARY] Using glossary file: {glossary.get_current_glossary_file()}")
+
     try:
         split_glossary(glossary.get_current_glossary_file())
         log_message("[GLOSSARY] Ensured name/context subfiles exist.")
@@ -21,20 +42,55 @@ def setup_glossary(glossary_file, log_message):
         log_message(f"[GLOSSARY] Split error or missing glossary: {e}")
     return glossary
 
-def run_glossary_phase(text_files, glossary, log_message):
+def run_glossary_phase(text_files, glossary, log_message, pause_event=None, cancel_flag=None):
     log_message("\n=== Phase 1: Building Glossary ===")
     for idx, filename in enumerate(text_files, 1):
+        # Check for cancel/pause before processing each file
+        if cancel_flag and cancel_flag():
+            log_message("[CONTROL] Glossary building canceled.")
+            break
+            
+        if pause_event and not pause_event.is_set():
+            log_message("[CONTROL] Paused during glossary building. Waiting...")
+            pause_event.wait()
+            log_message("[CONTROL] Resumed glossary building.")
+            if cancel_flag and cancel_flag():
+                log_message("[CONTROL] Glossary building canceled after resume.")
+                break
+                
         input_path = os.path.join("input", filename)
         try:
             with open(input_path, "r", encoding="utf-8") as f:
                 content = f.read()
+                
+            # Check for cancel/pause after file reading
+            if cancel_flag and cancel_flag():
+                log_message("[CONTROL] Glossary building canceled after file reading.")
+                break
+                
+            if pause_event and not pause_event.is_set():
+                log_message("[CONTROL] Paused after file reading. Waiting...")
+                pause_event.wait()
+                log_message("[CONTROL] Resumed glossary building.")
+                if cancel_flag and cancel_flag():
+                    log_message("[CONTROL] Glossary building canceled after resume.")
+                    break
+                
+            # Skip image-only chapters
+            if is_image_only_chapter(content):
+                log_message(f"[SKIP] {filename} contains only image embeds. Skipping glossary extraction.")
+                continue
+                
             glossary.build_glossary(content, log_message, split_glossary=False)
             log_message(f"Processed {filename} for glossary")
             
             # Add a 3-second delay between chapters
             if idx < len(text_files):
                 log_message(f"[DELAY] Waiting 3 seconds before next chapter...")
-                time.sleep(3)
+                from proofing.utils import cancellable_sleep
+                if not cancellable_sleep(3, cancel_flag):
+                    log_message("[CONTROL] Glossary building cancelled during chapter delay.")
+                    break
                 
         except Exception as e:
             log_message(f"[ERROR] {filename}: {e}")
@@ -63,9 +119,10 @@ def run_glossary_phase(text_files, glossary, log_message):
     
     log_message("========= glossary phase end =========\n")
 
-def run_translation_phase(text_files, glossary, log_message, pause_event, cancel_flag, source_lang):
-    translator = Translator(source_lang=source_lang)
-    translator.glossary = glossary
+def run_translation_phase(text_files, glossary, log_message, pause_event, cancel_flag, source_lang, preferred_provider=None):
+    translator = create_translator(glossary.get_current_glossary_file(), source_lang, preferred_provider)
+    if hasattr(translator, 'glossary'):
+        translator.glossary = glossary
     if not os.path.exists("output"):
         os.makedirs("output")
         log_message("Created 'output' directory")
@@ -79,7 +136,7 @@ def run_translation_phase(text_files, glossary, log_message, pause_event, cancel
         if cancel_flag and cancel_flag():
             log_message("[CONTROL] Translation canceled before processing.")
             break
-        if pause_event and pause_event.is_set():
+        if pause_event and not pause_event.is_set():
             log_message("[CONTROL] Paused. Waiting...")
             pause_event.wait()
             log_message("[CONTROL] Resumed.")
@@ -95,7 +152,7 @@ def run_translation_phase(text_files, glossary, log_message, pause_event, cancel
             if cancel_flag and cancel_flag():
                 log_message("[CONTROL] Translation canceled after file reading.")
                 break
-            if pause_event and pause_event.is_set():
+            if pause_event and not pause_event.is_set():
                 log_message("[CONTROL] Paused after file reading. Waiting...")
                 pause_event.wait()
                 log_message("[CONTROL] Resumed.")
@@ -107,18 +164,12 @@ def run_translation_phase(text_files, glossary, log_message, pause_event, cancel
                 log_message(f"[SKIP] {filename} is empty.")
                 continue
 
-            # Add more cancel/pause checks at key points in the workflow
-            # For example, before translation starts
-            if cancel_flag and cancel_flag():
-                log_message("[CONTROL] Translation canceled before translation starts.")
-                break
-            if pause_event and pause_event.is_set():
-                log_message("[CONTROL] Paused before translation. Waiting...")
-                pause_event.wait()
-                log_message("[CONTROL] Resumed.")
-                if cancel_flag and cancel_flag():
-                    log_message("[CONTROL] Translation canceled after resume.")
-                    break
+            # Skip image-only chapters
+            if is_image_only_chapter(content):
+                log_message(f"[SKIP] {filename} contains only image embeds. Copying without translation...")
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                continue
 
             html_only = re.sub(r"<[^>]+>", "", content).strip() == ""
             if html_only:
@@ -132,15 +183,15 @@ def run_translation_phase(text_files, glossary, log_message, pause_event, cancel
                 image_ocr = ImageOCR(log_function=log_message)
                 content = image_ocr.replace_image_tags_with_ocr(content, os.path.join("input", "images"))
 
-            translated = translator.translate(content, log_message)
+            translated = translator.translate(content, log_message, cancel_flag)
             if translated is None:
                 log_message(f"[ERROR] Failed to translate {filename}")
                 continue
 
             original_size = len(content.encode("utf-8"))
             translated_size = len(translated.encode("utf-8"))
-            retry_threshold_percent = 125.0
-            retry_threshold_kb = 10.0  # Add absolute threshold in KB
+            retry_threshold_percent = 115.0
+            retry_threshold_kb = 7.0  # Add absolute threshold in KB
             percent_diff = ((translated_size - original_size) / original_size * 100) if original_size else 0
             diff_kb = abs(translated_size - original_size) / 1024.0  # Calculate KB difference
             final_translation = translated
@@ -149,8 +200,17 @@ def run_translation_phase(text_files, glossary, log_message, pause_event, cancel
 
             while (abs(percent_diff) > retry_threshold_percent or diff_kb > retry_threshold_kb) and retry_count < max_retries:
                 retry_count += 1
-                log_message(f"[RETRY] Translation size mismatch for {filename}: {percent_diff:.2f}%, {diff_kb:.2f} KB. Retrying {retry_count}/{max_retries}")
-                translated_retry = translator.translate(content, log_message)
+                # Exponential backoff: 30s, 60s, 120s, 240s
+                retry_delay = 30 * (2 ** (retry_count - 1))
+                log_message(f"[RETRY] Translation size mismatch for {filename}: {percent_diff:.2f}%, {diff_kb:.2f} KB. Retrying {retry_count}/{max_retries} in {retry_delay}s...")
+
+                # Use cancellable sleep for exponential backoff
+                from proofing.utils import cancellable_sleep
+                if not cancellable_sleep(retry_delay, cancel_flag):
+                    log_message("[CONTROL] Retry cancelled during exponential backoff delay.")
+                    break
+
+                translated_retry = translator.translate(content, log_message, cancel_flag)
                 if translated_retry:
                     retry_size = len(translated_retry.encode("utf-8"))
                     retry_percent_diff = ((retry_size - original_size) / original_size * 100) if original_size else 0
@@ -186,56 +246,96 @@ def run_proofing_phase(glossary, log_message, pause_event=None, cancel_flag=None
     proofreader = Proofreader(log_message, glossary.get_current_glossary_file())
 
     log_message("\n========= proofing phase start =========")
+    
+    from proofing.utils import patch_missing_images, validate_image_blocks_all
+
+    patch_missing_images()
+    validate_image_blocks_all(log_message=log_message)
 
     # If no specific subphase is selected, or if we're starting from the beginning
     if subphase is None or subphase == "non_english":
         # --- Non-English Proofing
         log_message("=== Subphase: Non-English Check ===")
         non_english_log = os.path.join("output", "non_english_lines.log")
+        
+        # Process files in output directory
+        translated_files = sorted(f for f in os.listdir("output") if f.endswith(".txt"))
+        
+        # Skip image-only chapters and small files for non-English check
+        for fname in translated_files:
+            try:
+                file_path = os.path.join("output", fname)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # Skip files that are 1KB or smaller
+                file_size_bytes = len(content.encode("utf-8"))
+                if file_size_bytes <= 1024:
+                    log_message(f"[SKIP] {fname} is too small ({file_size_bytes} bytes). Skipping non-English check.")
+                    continue
+
+                if is_image_only_chapter(content):
+                    log_message(f"[SKIP] {fname} contains only image embeds. Skipping non-English check.")
+                    continue
+            except Exception as e:
+                log_message(f"[ERROR] Failed to check {fname}: {e}")
+        
         proofreader.detect_and_log_non_english_sentences(
             "output", non_english_log, "input", pause_event, cancel_flag
         )
         
-        # If we're only running this subphase, return
-        if subphase == "non_english":
-            return
 
-    if subphase is None or subphase == "gender":
-        # --- Gender Proofing
+    # COMMENTED OUT: Gender proofing section - diminishing returns
+    # if subphase is None or subphase == "gender":
+    #     # --- Gender Proofing
+    #     log_message("=== Subphase: Gender Proofing ===")
+
+    #     context_dict = proofreader.load_context_glossary()
+    #     translated_files = sorted(f for f in os.listdir("output") if f.endswith(".txt"))
+
+    #     for fname in translated_files:
+    #         if cancel_flag and cancel_flag():
+    #             log_message("[CONTROL] Cancel requested during gender proofing.")
+    #             break
+
+    #         if pause_event and not pause_event.is_set():
+    #             log_message("[CONTROL] Paused during gender proofing.")
+    #             pause_event.wait()
+    #             log_message("[CONTROL] Resumed.")
+
+    #         try:
+    #             file_path = os.path.join("output", fname)
+    #             with open(file_path, "r", encoding="utf-8") as f:
+    #                 translated = f.read()
+
+    #             # Skip files that are 1KB or smaller
+    #             file_size_bytes = len(translated.encode("utf-8"))
+    #             if file_size_bytes <= 1024:
+    #                 log_message(f"[SKIP] {fname} is too small ({file_size_bytes} bytes). Skipping gender proofing.")
+    #                 continue
+
+    #             # Skip image-only chapters
+    #             if is_image_only_chapter(translated):
+    #                 log_message(f"[SKIP] {fname} contains only image embeds. Skipping gender proofing.")
+    #                 continue
+
+    #             proofed = proofreader.proof_gender_pronouns(
+    #                 translated,
+    #                 context_dict,
+    #                 glossary_path=glossary.get_current_glossary_file()
+    #             )
+
+    #             with open(file_path, "w", encoding="utf-8") as f:
+    #                 f.write(proofed)
+    #             log_message(f"[OK] Gender fix done for {fname}")
+    #         except Exception as e:
+    #             log_message(f"[ERROR] Gender fix failed for {fname}: {e}")
+
+    # Skip gender proofing - commented out above
+    if subphase == "gender":
         log_message("=== Subphase: Gender Proofing ===")
+        log_message("[SKIP] Gender proofing is disabled - provides diminishing returns")
 
-        context_dict = proofreader.load_context_glossary()
-        translated_files = sorted(f for f in os.listdir("output") if f.endswith(".txt"))
-
-        for fname in translated_files:
-            if cancel_flag and cancel_flag():
-                log_message("[CONTROL] Cancel requested during gender proofing.")
-                break
-
-            if pause_event and not pause_event.is_set():
-                log_message("[CONTROL] Paused during gender proofing.")
-                pause_event.wait()
-                log_message("[CONTROL] Resumed.")
-
-            try:
-                file_path = os.path.join("output", fname)
-                with open(file_path, "r", encoding="utf-8") as f:
-                    translated = f.read()
-
-                proofed = proofreader.proof_gender_pronouns(
-                    translated,
-                    context_dict,
-                    glossary_path=glossary.get_current_glossary_file()
-                )
-
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(proofed)
-                log_message(f"[OK] Gender fix done for {fname}")
-            except Exception as e:
-                log_message(f"[ERROR] Gender fix failed for {fname}: {e}")
-
-        if subphase == "gender":
-            return
 
     if subphase is None or subphase == "final":
         # --- Final AI Proofing
@@ -261,6 +361,25 @@ def run_proofing_phase(glossary, log_message, pause_event=None, cancel_flag=None
                 
             try:
                 file_path = os.path.join("output", fname)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # Skip files that are 1KB or smaller
+                file_size_bytes = len(content.encode("utf-8"))
+                if file_size_bytes <= 1024:
+                    log_message(f"[SKIP] {fname} is too small ({file_size_bytes} bytes). Copying to proofed directory...")
+                    with open(os.path.join(proofed_dir, fname), "w", encoding="utf-8") as f:
+                        f.write(content)
+                    continue
+
+                # Skip image-only chapters
+                if is_image_only_chapter(content):
+                    log_message(f"[SKIP] {fname} contains only image embeds. Copying to proofed directory...")
+                    with open(os.path.join(proofed_dir, fname), "w", encoding="utf-8") as f:
+                        f.write(content)
+                    continue
+                
                 ai_proofed = proofreader.proofread_with_ai(file_path)
                 
                 if ai_proofed:
@@ -278,12 +397,15 @@ def run_proofing_phase(glossary, log_message, pause_event=None, cancel_flag=None
 
 def main(log_message=None, glossary_file=None, proofing_only=False,
          skip_phase1=False, pause_event=None, cancel_flag=None,
-         source_lang="Japanese", proofing_subphase=None):
+         source_lang="Japanese", proofing_subphase=None, input_folder=None,
+         preferred_provider=None):
 
     if log_message is None:
         log_message = print
 
-    glossary = setup_glossary(glossary_file, log_message)
+    folder_to_use = input_folder or os.path.abspath("input")
+    glossary = setup_glossary(glossary_file, folder_to_use, log_message)
+
 
     input_files = [f for f in os.listdir("input") if f.endswith(".txt")] if os.path.exists("input") else []
     run_translation = bool(input_files)
@@ -292,15 +414,17 @@ def main(log_message=None, glossary_file=None, proofing_only=False,
 
     if not proofing_only:
         if run_translation and not skip_phase1:
-            run_glossary_phase(text_files, glossary, log_message)
+            run_glossary_phase(text_files, glossary, log_message, pause_event, cancel_flag)
         if run_translation:
-            run_translation_phase(text_files, glossary, log_message, pause_event, cancel_flag, source_lang)
+            run_translation_phase(text_files, glossary, log_message, pause_event, cancel_flag, source_lang, preferred_provider)
 
     # Run proofing phase with subphase control
     run_proofing_phase(glossary, log_message, pause_event, cancel_flag, subphase=proofing_subphase)
 
 if __name__ == "__main__":
     main()
+
+
 
 
 

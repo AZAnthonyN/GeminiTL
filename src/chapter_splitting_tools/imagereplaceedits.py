@@ -1,7 +1,6 @@
 import os
 import re
-import tkinter as tk
-from tkinter import filedialog, messagebox
+import wx
 
 def extract_img_tags(html):
     return list(re.finditer(r'<img[^>]+>', html, flags=re.IGNORECASE))
@@ -29,26 +28,23 @@ def replace_imgs_by_position(original_html, new_html):
     return ''.join(result)
 
 def main():
-    root = tk.Tk()
-    root.withdraw()
+    app = wx.App()
 
     # Select Original HTML
-    original_path = filedialog.askopenfilename(
-        title="Select Original HTML file (to modify)",
-        filetypes=[("HTML Files", "*.html"), ("All Files", "*.*")]
-    )
-    if not original_path:
-        messagebox.showinfo("Cancelled", "No HTML file selected.")
-        return
+    with wx.FileDialog(None, "Select Original HTML file (to modify)",
+                      wildcard="HTML Files (*.html)|*.html|All Files (*.*)|*.*") as dialog:
+        if dialog.ShowModal() != wx.ID_OK:
+            wx.MessageBox("No HTML file selected.", "Cancelled", wx.OK | wx.ICON_INFORMATION)
+            return
+        original_path = dialog.GetPath()
 
     # Select New HTML with replacement <img> tags
-    new_path = filedialog.askopenfilename(
-        title="Select HTML/Text file with new <img> tags (same structure)",
-        filetypes=[("HTML Files", "*.html"), ("Text Files", "*.txt"), ("All Files", "*.*")]
-    )
-    if not new_path:
-        messagebox.showinfo("Cancelled", "No second HTML/text file selected.")
-        return
+    with wx.FileDialog(None, "Select HTML/Text file with new <img> tags (same structure)",
+                      wildcard="HTML Files (*.html)|*.html|Text Files (*.txt)|*.txt|All Files (*.*)|*.*") as dialog:
+        if dialog.ShowModal() != wx.ID_OK:
+            wx.MessageBox("No second HTML/text file selected.", "Cancelled", wx.OK | wx.ICON_INFORMATION)
+            return
+        new_path = dialog.GetPath()
 
     with open(original_path, "r", encoding="utf-8") as f:
         original_html = f.read()
@@ -63,7 +59,7 @@ def main():
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(updated_html)
 
-    messagebox.showinfo("Done", f"<img> tags replaced by position.\nSaved as: {output_path}")
+    wx.MessageBox(f"<img> tags replaced by position.\nSaved as: {output_path}", "Done", wx.OK | wx.ICON_INFORMATION)
 
 if __name__ == "__main__":
     main()

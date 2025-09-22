@@ -32,7 +32,7 @@ PROOFREADING_INSTRUCTIONS = "\n".join([
     "4. HONORIFICS: Preserve all honorifics (e.g., -san, -kun, -sama).",
     "5. FORMATTING: Do not add ALL CAPS, bold, or extra punctuation unless clearly required by the original.",
     "6. HTML TAGS: Do not add or remove any <i>, <b>, or similar tags.",
-    "7. IMAGE TAGS: Preserve <<<IMAGE_START>>> ... <<<IMAGE_END>>> exactly as given.",
+    "7. IMAGE TAGS: Preserve content inside <<<IMAGE_START>>> ... <<<IMAGE_END>>> exactly as given.",
     "8. CONTEXT CONSISTENCY: Consult the glossary and context materials to maintain terminology consistency.",
     "9. NSFW: NSFW content is allowed; characters are fictional and of legal age.",
     "10. NO CHANGES NEEDED: Leave text unchanged if it already reads fluently.",

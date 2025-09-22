@@ -48,8 +48,9 @@ class Glossary:
         Args:
             glossary_path: Optional path to a custom glossary file
         """
-        self.current_glossary_path = glossary_path or self.DEFAULT_GLOSSARY_PATH
-        self.ensure_glossary_exists(self.current_glossary_path)
+        self.current_glossary_path = glossary_path
+        if self.current_glossary_path:
+            self.ensure_glossary_exists(self.current_glossary_path)
         
     def set_current_glossary_file(self, custom_path):
         """
@@ -310,6 +311,20 @@ class Glossary:
         except Exception as e:
             log_message(f"[ERROR] Failed to clean glossary: {e}")
             return False
+        
+    def create_named_glossary_if_none(self, input_folder: str, log_message=print):
+        """
+        Create a new glossary named after the input folder if no glossary path is set.
+        """
+        if not self.current_glossary_path:
+            folder_name = os.path.basename(os.path.normpath(input_folder))
+            glossary_dir = os.path.join("translation", "glossary")
+            os.makedirs(glossary_dir, exist_ok=True)
+            glossary_path = os.path.join(glossary_dir, f"{folder_name}.txt")
+            self.set_current_glossary_file(glossary_path)
+            log_message(f"[GLOSSARY] No glossary selected — created: {glossary_path}")
+
+
 
 # For backward compatibility
 def get_current_glossary_file():
@@ -336,8 +351,7 @@ def build_glossary(input_text, log_message, glossary_filename=None,
 
 
 if __name__ == "__main__":
-    import tkinter as tk
-    from tkinter import filedialog
+    import wx
     import os
     import sys
 
@@ -349,13 +363,12 @@ if __name__ == "__main__":
     def dummy_logger(msg):
         print(msg)
 
-    root = tk.Tk()
-    root.withdraw()
-    input_dir = filedialog.askdirectory(title="Select RAW input folder with .txt files")
-
-    if not input_dir:
-        print("[CANCELLED] No folder selected.")
-        sys.exit(0)
+    app = wx.App()
+    with wx.DirDialog(None, "Select RAW input folder with .txt files") as dialog:
+        if dialog.ShowModal() != wx.ID_OK:
+            print("[CANCELLED] No folder selected.")
+            sys.exit(0)
+        input_dir = dialog.GetPath()
 
     glossary = Glossary()
     glossary_chunks = []

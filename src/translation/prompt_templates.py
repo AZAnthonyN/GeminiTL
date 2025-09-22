@@ -13,7 +13,7 @@ Maintain the following conventions:
 - Always retain Japanese honorifics (-san, -chan, -sama, etc.)
 - Convert Japanese slang, internet lingo, and idiomatic expressions into natural-sounding English equivalents. Do not translate slang literally.
 - Do not omit sentence-final particles (e.g., "yo", "ne") — translate their meaning.
-- Preserve formatting including HTML tags and <<<IMAGE_START>>>...<<<IMAGE_END>>> blocks exactly.
+- Preserve formatting including HTML tags and content inside <<<IMAGE_START>>>...<<<IMAGE_END>>> blocks as they are, exactly.
 - If names are in kanji or katakana, use the translated form from the glossary if available.
 
 Examples:

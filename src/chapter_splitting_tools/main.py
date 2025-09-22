@@ -39,7 +39,8 @@ def main(args: Optional[list[str]] = None) -> None:
     combine_parser.add_argument("input_dir", help="Directory containing files to combine")
     combine_parser.add_argument("output_file", help="Path to save combined output")
     combine_parser.add_argument("--format", choices=["txt", "epub"], default="txt", help="Output format (default: txt)")
-    combine_parser.add_argument("--reference_epub", help="Path to a reference EPUB for ordering chapters", default=None)
+    # Remove the reference_epub argument or make it always None
+    # combine_parser.add_argument("--reference_epub", help="Path to a reference EPUB for ordering chapters", default=None)
 
     # Clear folders command
     clear_parser = subparsers.add_parser("clear", help="Clear input and output folders")
@@ -61,7 +62,8 @@ def main(args: Optional[list[str]] = None) -> None:
 
         elif args.command == "combine":
             combiner = OutputCombiner()
-            combiner.combine(args.input_dir, args.output_file, args.format, args.reference_epub)
+            # Pass None for reference_epub
+            combiner.combine(args.input_dir, args.output_file, args.format, reference_epub=None)
             print(f"Files combined successfully. Output saved to: {args.output_file}")
 
         elif args.command == "clear":

@@ -1,3 +1,3 @@
-PROJECT_ID=-insert gcloud projectid here
+PROJECT_ID=	arboreal-vision-467415-j7
 LOCATION=us-central1
-LOGIN_KEY=insert novelpia loginkey here
+LOGIN_KEY=71f36e1f5ec2fca47a7adede3c47d70458dd7a99

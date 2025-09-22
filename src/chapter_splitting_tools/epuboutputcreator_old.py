@@ -44,7 +44,7 @@ class EPUBOutputCreator:
             placeholder = f"__ITALIC_{len(italic_placeholders)}__"
             italic_placeholders[placeholder] = match.group(0)
             return placeholder
-        
+            
         # Find and replace all <i>...</i> patterns
         pattern = re.compile(r'<i>.*?</i>', re.DOTALL)
         processed = pattern.sub(replace_italic, line)
@@ -55,7 +55,7 @@ class EPUBOutputCreator:
         # Restore italic tags
         for placeholder, original in italic_placeholders.items():
             processed = processed.replace(placeholder, original)
-        
+            
         return processed
 
     @staticmethod
@@ -139,6 +139,7 @@ class EPUBOutputCreator:
         # Final output
         return frontmatter_files + ordered + unmatched
 
+
     def create_epub(self, output_dir, epub_name, image_dir=None, reference_epub=None):
         """
         Creates an EPUB file from the translated text files in the output directory.
@@ -148,51 +149,12 @@ class EPUBOutputCreator:
             epub_name: Name of the EPUB file to create
             image_dir: Directory containing images to embed (optional)
         """
-        original_dir = Path(output_dir)  # Keep the original directory for finding text files
+        epub_dir = Path(output_dir)
         image_dir = Path(image_dir) if image_dir else None
-        temp_dir = original_dir / "temp_epub"
-
-        # Log original directory and filename intent with user-friendly paths
-        try:
-            relative_output = os.path.relpath(output_dir, os.getcwd())
-            self.log_function(f"[INFO] Starting EPUB creation from: {relative_output}")
-        except ValueError:
-            self.log_function(f"[INFO] Starting EPUB creation from: {output_dir}")
-
-        # Show just the filename for the initial EPUB name if it's a full path
-        display_epub_name = os.path.basename(epub_name) if os.path.isabs(epub_name) else epub_name
-        self.log_function(f"[INFO] Initial requested EPUB name: {display_epub_name}")
-
-        # Determine which folder to use as the base name
-        folder_name = original_dir.name.lower()
-        if folder_name in ("proofed_ai", "unproofed"):
-            true_base = original_dir.parent.name
-            self.log_function(f"[INFO] Folder '{folder_name}' detected — using parent folder name '{true_base}' for EPUB title")
-            # We'll use the parent name for the EPUB title, but still look for files in the original directory
-        else:
-            true_base = folder_name
-            self.log_function(f"[INFO] Using current folder name '{true_base}' for EPUB title")
-
-        # Fix the epub_name if it was passed in as a generic subfolder name
-        if epub_name.lower() in ("proofed_ai.epub", "unproofed.epub") or \
-        os.path.basename(epub_name).lower() in ("proofed_ai.epub", "unproofed.epub"):
-            compiled_dir = os.path.join(os.getcwd(), "compiled_epubs")
-            os.makedirs(compiled_dir, exist_ok=True)
-            corrected_path = os.path.join(compiled_dir, f"{true_base}.epub")
-            try:
-                relative_corrected = os.path.relpath(corrected_path, os.getcwd())
-                self.log_function(f"[FIX] EPUB name '{os.path.basename(epub_name)}' was generic. Rewriting as: {relative_corrected}")
-            except ValueError:
-                self.log_function(f"[FIX] EPUB name '{os.path.basename(epub_name)}' was generic. Rewriting as: {corrected_path}")
-            epub_name = corrected_path
-        else:
-            display_name = os.path.basename(epub_name) if os.path.isabs(epub_name) else epub_name
-            self.log_function(f"[INFO] EPUB name is acceptable: {display_name}")
-
-        self.log_function(f"[INFO] EPUB base name will be derived from: '{true_base}'")
+        temp_dir = epub_dir / "temp_epub"
 
         try:
-            if not original_dir.exists():
+            if not epub_dir.exists():
                 raise FileNotFoundError(f"The output directory '{output_dir}' does not exist.")
 
             # If user provided an image_dir path but it doesn't exist, just warn and skip images
@@ -218,15 +180,10 @@ class EPUBOutputCreator:
 
             # Use external EPUB's TOC.html to guide the chapter order
             if reference_epub and os.path.exists(reference_epub):
-                text_files = self.order_text_files_by_epub_toc(original_dir, reference_epub)
+                text_files = self.order_text_files_by_epub_toc(epub_dir, reference_epub)
                 self.log_function(f"[DEBUG] Using reference EPUB TOC for chapter order: {reference_epub}")
             else:
-                text_files = self.order_text_files_by_epub_toc(original_dir, None)
-                
-            # Debug the text files found
-            self.log_function(f"[DEBUG] Found {len(text_files)} text file groups in {original_dir}")
-            for i, group in enumerate(text_files):
-                self.log_function(f"[DEBUG] Group {i+1}: {[f.name for f in group]}")
+                text_files = self.order_text_files_by_epub_toc(epub_dir, None)
 
             manifest_items = ['<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>']
             spine_items = []
@@ -482,7 +439,7 @@ class EPUBOutputCreator:
   </navMap>
 </ncx>""")
 
-            epub_path = Path(epub_name) if os.path.isabs(epub_name) else original_dir / epub_name
+            epub_path = epub_dir / epub_name
             with zipfile.ZipFile(epub_path, "w") as epub:
                 # First add mimetype file uncompressed
                 epub.write(mimetype_path, "mimetype", compress_type=zipfile.ZIP_STORED)
@@ -492,13 +449,7 @@ class EPUBOutputCreator:
                     if path.name != "mimetype":  # Skip mimetype as it's already added
                         epub.write(path, path.relative_to(temp_dir))
 
-            # Show a user-friendly path relative to the current working directory
-            try:
-                relative_path = os.path.relpath(epub_path, os.getcwd())
-                self.log_function(f"EPUB created: {relative_path}")
-            except ValueError:
-                # If relative path fails (different drives on Windows), show the full path
-                self.log_function(f"EPUB created: {epub_path}")
+            self.log_function(f"EPUB created: {epub_path}")
             return epub_path
 
         finally:
@@ -509,91 +460,7 @@ class EPUBOutputCreator:
                     self.log_function("[DEBUG] Cleaned up temporary EPUB directory")
                 except Exception as e:
                     self.log_function(f"[WARNING] Failed to clean up temporary EPUB directory: {e}")
-
-
-def show_gui_epub_dialog():
-    """
-    GUI entry point for EPUB creation with proper dialogs.
-    """
-    import wx
-
-    # Select output folder
-    with wx.DirDialog(None, "Select Output Folder", defaultPath="output") as dialog:
-        if dialog.ShowModal() != wx.ID_OK:
-            wx.MessageBox("No output folder selected. EPUB creation canceled.", "Canceled", wx.OK | wx.ICON_INFORMATION)
-            return
-        output_folder = dialog.GetPath()
-
-    # Get a suitable parent folder name for the EPUB name
-    output_path = Path(output_folder)
-
-    # Start with the parent folder and go up until finding a suitable name
-    current_path = output_path.parent
-    parent_folder_name = current_path.name
-
-    # Skip folders named "proofed_ai" or "unproofed" by going up the directory tree
-    while parent_folder_name.lower() in ["proofed_ai", "unproofed"] and current_path.parent != current_path:
-        current_path = current_path.parent
-        parent_folder_name = current_path.name
-
-    epub_name = f"{parent_folder_name}.epub"
-
-    # Create the compiled_epubs directory if it doesn't exist
-    compiled_dir = os.path.join(os.getcwd(), "compiled_epubs")
-    os.makedirs(compiled_dir, exist_ok=True)
-
-    # Full path to the EPUB file
-    epub_path = os.path.join(compiled_dir, epub_name)
-
-    # Check if the file already exists
-    if os.path.exists(epub_path):
-        result = wx.MessageBox(
-            f"{epub_name} already exists in compiled_epubs. Overwrite?",
-            "File Exists",
-            wx.YES_NO | wx.ICON_QUESTION
-        )
-        if result != wx.YES:
-            # Generate a unique filename with timestamp
-            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-            epub_name = f"{parent_folder_name}_{timestamp}.epub"
-            epub_path = os.path.join(compiled_dir, epub_name)
-
-    # Select image directory (optional)
-    with wx.DirDialog(None, "Select Image Directory (Optional - Cancel to skip)") as dialog:
-        if dialog.ShowModal() == wx.ID_OK:
-            image_folder = dialog.GetPath()
-        else:
-            image_folder = None
-
-    # Skip reference EPUB selection
-    reference_epub = None
-
-    # Create the EPUB
-    try:
-        creator = EPUBOutputCreator()
-        created_epub = creator.create_epub(
-            output_dir=output_folder,
-            epub_name=epub_path,
-            image_dir=image_folder,
-            reference_epub=reference_epub
-        )
-
-        # Show success message with user-friendly path
-        try:
-            relative_path = os.path.relpath(created_epub, os.getcwd())
-            display_path = relative_path
-        except ValueError:
-            # If relative path fails (different drives on Windows), show the full path
-            display_path = str(created_epub)
-
-        wx.MessageBox(
-            f"EPUB created successfully!\n\nLocation: {display_path}",
-            "EPUB Created",
-            wx.OK | wx.ICON_INFORMATION
-        )
-    except Exception as e:
-        wx.MessageBox(f"Failed to create EPUB: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
-
+            
 
 def main():
     """
@@ -654,18 +521,7 @@ def main():
         reference_epub=reference_epub
     )
     
-    # Use the actual returned path from create_epub, not the original path
-    try:
-        relative_path = os.path.relpath(created_epub, os.getcwd())
-        print(f"EPUB created successfully: {relative_path}")
-    except ValueError:
-        # If relative path fails (different drives on Windows), show the full path
-        print(f"EPUB created successfully: {created_epub}")
-
-
-
-
-
+    print(f"EPUB created successfully: {created_epub}")
 
 
 

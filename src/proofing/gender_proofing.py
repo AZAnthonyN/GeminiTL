@@ -33,10 +33,10 @@ def proof_gender_pronouns(text: str, context_dict: dict, glossary_path: str,
             "You MUST NOT change any character names, punctuation, sentence structure, word choice, formatting, or any other aspect of the text besides the gender pronouns that conflict with the provided glossary.",
             "Do NOT invent, hallucinate, rephrase, or translate from scratch. Only make the smallest changes necessary to correct pronouns.",
             "",
-            "HTML tags and <<<IMAGE_START>>>...<<<IMAGE_END>>> blocks MUST be preserved exactly.  Do not modify or remove them.",
+            "HTML tags and content inside <<<IMAGE_START>>>...<<<IMAGE_END>>> blocks MUST be preserved exactly.  Do not modify or remove them.",
             "If no gender pronouns require correction based on the glossary, return the text exactly as-is.",
             "If the provided 'context_glossary_text' is empty or contains '(none)', skip pronoun correction and return the text exactly as-is.", #handles no context glossary
-            "",
+            "Do not give any comments or explanations.  Just return the corrected text.",
             "===========================CONTEXT GLOSSARY=========================",
             "Glossary (character name => gender pronoun set):  Use these to replace existing pronouns in the main text. Example sets: 'he/him/his/himself', 'she/her/hers/herself', 'they/them/their/themselves'.", #clarifying and adding pronouns
             context_glossary_text or "(none)",
