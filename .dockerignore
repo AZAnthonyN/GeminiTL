@@ -1,0 +1,95 @@
+# Docker ignore file for GeminiTL
+# Excludes unnecessary files from the Docker image
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (keep only essential docs)
+*.md
+!README.md
+!DOCKER_README.md
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Output directories (will be mounted as volumes)
+output/
+compiled_epubs/
+input/
+
+# Outdated and unused items
+outdated_unused_items/
+
+# History files
+src/.history/
+.history/
+
+# Configuration files with sensitive data
+src/config/service_account.json
+src/config/config.txt
+src/config/providers_config.json
+
+# Keep templates
+!src/config/*.template
+!src/config/README.md
+
+# OS-specific files
+Thumbs.db
+.DS_Store
+
+# Docker files (don't include in image)
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Large binary files
+*.epub
+*.pdf
+*.zip
+*.tar.gz
+
+# Translation glossary (user-specific)
+translation/glossary/*.txt
+

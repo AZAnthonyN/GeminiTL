@@ -206,9 +206,14 @@ class TranslationApp(wx.Frame):
 
 
     def _create_default_folders(self):
+        # Log current working directory for debugging
+        cwd = os.getcwd()
+        self.log_message(f"[INIT] Current working directory: {cwd}")
+
         for folder in ["input", "output", "translation", os.path.join("translation", "glossary")]:
-            os.makedirs(folder, exist_ok=True)
-            self.log_message(f"[INIT] Ensured folder exists: {folder}")
+            abs_path = os.path.abspath(folder)
+            os.makedirs(abs_path, exist_ok=True)
+            self.log_message(f"[INIT] Ensured folder exists: {abs_path}")
 
     def log_message(self, *args):
         timestamp = datetime.now().strftime("[%H:%M:%S]")
@@ -304,7 +309,9 @@ class TranslationApp(wx.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def select_input_folder(self):
-        with wx.DirDialog(self, "Select Input Folder", defaultPath="input") as dialog:
+        # Get absolute path to input directory
+        input_dir = os.path.abspath("input")
+        with wx.DirDialog(self, "Select Input Folder", defaultPath=input_dir) as dialog:
             if dialog.ShowModal() == wx.ID_OK:
                 folder = dialog.GetPath()
                 self.input_folder = folder
@@ -313,7 +320,15 @@ class TranslationApp(wx.Frame):
         return None
 
     def select_glossary_file(self):
-        default_dir = os.path.join(os.path.dirname(__file__), "..", "translation")
+        # Get absolute path to translation/glossary directory
+        default_dir = os.path.abspath(os.path.join("translation", "glossary"))
+        if not os.path.exists(default_dir):
+            # Fallback to just translation directory
+            default_dir = os.path.abspath("translation")
+        if not os.path.exists(default_dir):
+            # Final fallback to current directory
+            default_dir = os.getcwd()
+
         with wx.FileDialog(self, "Select Glossary", defaultDir=default_dir,
                           wildcard="Text files (*.txt)|*.txt") as dialog:
             if dialog.ShowModal() == wx.ID_OK:
@@ -321,8 +336,9 @@ class TranslationApp(wx.Frame):
         return None
 
     def _move_files_to_input(self, src):
+        input_dir = os.path.abspath("input")
         for filename in os.listdir(src):
-            shutil.move(os.path.join(src, filename), os.path.join("input", filename))
+            shutil.move(os.path.join(src, filename), os.path.join(input_dir, filename))
             self.log_message(f"Moved {filename} to input folder")
 
     def show_splitter_dialog(self, event):
@@ -348,14 +364,15 @@ class TranslationApp(wx.Frame):
             if dialog.ShowModal() == wx.ID_OK:
                 epub_file = dialog.GetPath()
                 epub_name = os.path.splitext(os.path.basename(epub_file))[0]
-                input_subdir = os.path.join("input", epub_name)
+                input_subdir = os.path.abspath(os.path.join("input", epub_name))
 
                 self.log_message(f"Running EPUB Separator for {epub_name}")
                 separator = EPUBSeparator(self.log_message)
                 separator.separate(epub_file, input_subdir)
 
     def run_output_combiner(self, event):
-        with wx.DirDialog(self, "Select Output Folder", defaultPath="output") as dialog:
+        output_dir = os.path.abspath("output")
+        with wx.DirDialog(self, "Select Output Folder", defaultPath=output_dir) as dialog:
             if dialog.ShowModal() == wx.ID_OK:
                 folder = dialog.GetPath()
                 combiner = OutputCombiner(self.log_message)
@@ -427,8 +444,15 @@ class TranslationApp(wx.Frame):
         try:
             from chapter_splitting_tools.organize_translated_folders import move_translated_content
             move_translated_content(input_name, log=self.log_message)
+            self.log_message("[SUCCESS] Folder organization completed successfully!")
         except Exception as e:
-            self.log_message(f"[ERROR] Failed to run folder organizer: {e}")
+            error_msg = str(e)
+            if "Access is denied" in error_msg or "WinError 5" in error_msg:
+                self.log_message(f"[WARNING] Failed to rename folder - folder may be in use by another process")
+                self.log_message(f"[WARNING] Translation files were organized successfully")
+                self.log_message(f"[WARNING] You can manually rename '{input_name}' to 'processed_{input_name}' later")
+            else:
+                self.log_message(f"[ERROR] Failed to run folder organizer: {e}")
 
     def run_bulk_epub_separator(self):
         separator = EPUBSeparator(self.log_message)
@@ -442,9 +466,9 @@ class TranslationApp(wx.Frame):
             return
 
         # Check if input folder exists
-        input_dir = "input"
+        input_dir = os.path.abspath("input")
         if not os.path.exists(input_dir):
-            wx.MessageBox("Input folder does not exist!", "Error", wx.OK | wx.ICON_ERROR)
+            wx.MessageBox(f"Input folder does not exist at: {input_dir}", "Error", wx.OK | wx.ICON_ERROR)
             return
 
         # Set running state
@@ -590,9 +614,10 @@ class TranslationApp(wx.Frame):
                 wx.CallAfter(self.job_list.SetItem, i, 1, "Moving Files")
 
                 # Clear the main input directory first (but preserve subfolders)
+                input_dir_abs = os.path.abspath("input")
                 self.log_message(f"[SETUP] Clearing main input directory for: {name}")
-                for item in os.listdir("input"):
-                    item_path = os.path.join("input", item)
+                for item in os.listdir(input_dir_abs):
+                    item_path = os.path.join(input_dir_abs, item)
                     if os.path.isfile(item_path) and item.endswith('.txt'):
                         os.remove(item_path)
                         self.log_message(f"[SETUP] Removed: {item}")
@@ -650,8 +675,15 @@ class TranslationApp(wx.Frame):
                     move_translated_content(name, log=self.log_message)
                     wx.CallAfter(self.job_list.SetItem, i, 1, "Done")
                 except Exception as e:
-                    self.log_message(f"[ERROR] Failed to translate {name}: {e}")
-                    wx.CallAfter(self.job_list.SetItem, i, 1, "Error")
+                    error_msg = str(e)
+                    if "Access is denied" in error_msg or "WinError 5" in error_msg:
+                        self.log_message(f"[ERROR] Failed to rename folder for {name} - folder may be in use")
+                        self.log_message(f"[ERROR] Translation completed successfully, but folder not marked as processed")
+                        self.log_message(f"[ERROR] You can manually rename '{name}' to 'processed_{name}' later")
+                        wx.CallAfter(self.job_list.SetItem, i, 1, "Done (Rename Failed)")
+                    else:
+                        self.log_message(f"[ERROR] Failed to translate {name}: {e}")
+                        wx.CallAfter(self.job_list.SetItem, i, 1, "Error")
                     
             # After all jobs or after cancellation, reset UI
             was_cancelled = self.cancel_requested
@@ -674,6 +706,7 @@ class TranslationApp(wx.Frame):
 
     def show_bulk_glossary_dialog(self, folder_name: str, current_index: int, total_folders: int):
         """Show glossary selection dialog for bulk translation."""
+        self.log_message(f"[GLOSSARY] Showing glossary dialog for folder: {folder_name} ({current_index}/{total_folders})")
         dialog_title = f"Glossary Selection - Folder {current_index}/{total_folders}: {folder_name}"
 
         choices = [
@@ -693,17 +726,24 @@ class TranslationApp(wx.Frame):
         with wx.SingleChoiceDialog(self, message, dialog_title, choices) as dialog:
             if dialog.ShowModal() == wx.ID_OK:
                 selection = dialog.GetSelection()
+                self.log_message(f"[GLOSSARY] User selected option {selection}: {choices[selection]}")
 
                 if selection == 0:  # Create new glossary
+                    self.log_message(f"[GLOSSARY] Auto-generating glossary for {folder_name}")
                     return None  # None triggers auto-creation
                 elif selection == 1:  # Select existing glossary
-                    return self.select_glossary_file()  # Returns file path or None
+                    glossary_path = self.select_glossary_file()
+                    self.log_message(f"[GLOSSARY] Selected glossary file: {glossary_path}")
+                    return glossary_path  # Returns file path or None
                 elif selection == 2:  # Skip this folder
+                    self.log_message(f"[GLOSSARY] Skipping folder: {folder_name}")
                     return "skip_folder"
                 elif selection == 3:  # Skip remaining folders
+                    self.log_message(f"[GLOSSARY] Skipping remaining folders, auto-generating for all")
                     return "skip_remaining"
             else:
                 # User cancelled - treat as skip this folder
+                self.log_message(f"[GLOSSARY] Dialog cancelled, skipping folder: {folder_name}")
                 return "skip_folder"
 
     def show_config_dialog(self, event):

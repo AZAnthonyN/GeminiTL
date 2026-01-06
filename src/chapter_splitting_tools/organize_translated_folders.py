@@ -1,6 +1,11 @@
 import os
 import shutil
+import sys
 from tkinter import filedialog
+
+# Add utils to path for importing
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from utils.file_operations import safe_rename_folder, safe_move_folder
 
 def move_translated_content(input_folder_name=None, log=print):
     # Set up correct paths based on script location
@@ -49,11 +54,14 @@ def move_translated_content(input_folder_name=None, log=print):
         if os.path.exists(folder_path):
             os.makedirs(translated_dir, exist_ok=True)
             dst = os.path.join(translated_dir, folder_name)
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.move(folder_path, dst)
-            log(f"[MOVE] {folder_name}/ → {translated_dir}")
-            did_move_anything = True
+
+            # Use safe move function with retry logic
+            move_success = safe_move_folder(folder_path, dst, log)
+            if move_success:
+                log(f"[MOVE] {folder_name}/ → {translated_dir}")
+                did_move_anything = True
+            else:
+                log(f"[WARNING] Failed to move {folder_name}/ folder - may be in use")
         else:
             log(f"[SKIP] {folder_name}/ not found")
 
@@ -71,20 +79,25 @@ def move_translated_content(input_folder_name=None, log=print):
         images_path = os.path.join(input_root, "images")
         if os.path.exists(images_path):
             dst = os.path.join(input_subfolder, "images")
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.move(images_path, dst)
-            log(f"[RESTORE] images/ → {input_folder_name}/images/")
-            did_move_anything = True
+
+            # Use safe move function with retry logic
+            move_success = safe_move_folder(images_path, dst, log)
+            if move_success:
+                log(f"[RESTORE] images/ → {input_folder_name}/images/")
+                did_move_anything = True
+            else:
+                log(f"[WARNING] Failed to move images/ folder - may be in use")
 
         # Step 5: Rename folder unless already processed
         if not input_folder_name.startswith("processed_"):
             new_name = f"processed_{input_folder_name}"
             new_path = os.path.join(input_root, new_name)
-            if os.path.exists(new_path):
-                shutil.rmtree(new_path)
-            os.rename(input_subfolder, new_path)
-            log(f"[RENAME] {input_folder_name}/ → {new_name}/")
+
+            # Use safe rename function with retry logic
+            rename_success = safe_rename_folder(input_subfolder, new_path, log)
+            if not rename_success:
+                log(f"[WARNING] Failed to rename folder. Translation completed but folder not marked as processed.")
+                log(f"[WARNING] Please manually rename '{input_folder_name}' to '{new_name}' when possible.")
         else:
             log("[SKIP] Already processed. No rename.")
     else:

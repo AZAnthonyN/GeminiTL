@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  geminitl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: geminitl:latest
+    container_name: geminitl-translator
+    
+    # Environment variables for API keys
+    # You can also use a .env file
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/src/config/service_account.json
+    
+    # Volume mappings
+    volumes:
+      # Input files
+      - ./input:/app/input
+      # Output files
+      - ./output:/app/output
+      # Compiled EPUBs
+      - ./compiled_epubs:/app/compiled_epubs
+      # Configuration (mount your actual config files)
+      - ./src/config:/app/src/config
+      # Glossary files
+      - ./translation/glossary:/app/translation/glossary
+    
+    # Resource limits for Raspberry Pi 5
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'      # Raspberry Pi 5 has 4 cores
+          memory: 6G       # Leave some memory for the system
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Network mode
+    network_mode: bridge
+    
+    # Keep container running for interactive use
+    stdin_open: true
+    tty: true
+    
+    # Default command (can be overridden)
+    command: ["python", "main.py", "--help"]
+
+# Optional: Add a service for running specific workflows
+  translate:
+    extends: geminitl
+    container_name: geminitl-translate
+    command: ["python", "main.py", "translate", "--source-lang", "Japanese"]
+    profiles:
+      - translate
+
+  proof:
+    extends: geminitl
+    container_name: geminitl-proof
+    command: ["python", "main.py", "proof"]
+    profiles:
+      - proof
+
+# Networks
+networks:
+  default:
+    driver: bridge
+
+# Volumes (optional: use named volumes instead of bind mounts)
+volumes:
+  input_data:
+  output_data:
+  compiled_data:
+
+# Usage examples:
+# 
+# 1. Build and start:
+#    docker-compose up -d
+#
+# 2. Run translation:
+#    docker-compose run --rm geminitl python main.py translate --source-lang Japanese
+#
+# 3. Run EPUB separation:
+#    docker-compose run --rm geminitl python main.py epub-separate /app/input/novel.epub /app/input
+#
+# 4. Interactive shell:
+#    docker-compose run --rm geminitl /bin/bash
+#
+# 5. View logs:
+#    docker-compose logs -f geminitl
+#
+# 6. Stop and remove:
+#    docker-compose down
+#
+# 7. Run with specific profile:
+#    docker-compose --profile translate up
+
